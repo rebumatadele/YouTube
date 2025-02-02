@@ -87,16 +87,24 @@ def app():
 
     # Thumbnails Display Section
     st.markdown("### 📷 Thumbnail Preview")
-    if "thumbnail_savepaths" in st.session_state and st.session_state.thumbnail_savepaths:
-        for ind, thumbnail_savepath in enumerate(st.session_state.thumbnail_savepaths):
+    if ("thumbnail_savepaths" in st.session_state and 
+        "thumbnail_data_entries" in st.session_state and 
+        st.session_state.thumbnail_savepaths and 
+        st.session_state.thumbnail_data_entries):
+
+        # Ensure both lists have the same length
+        num_thumbnails = min(len(st.session_state.thumbnail_savepaths), 
+                            len(st.session_state.thumbnail_data_entries))
+        for ind in range(num_thumbnails):
+            # Use .get() with a default value to avoid KeyError
             title = st.session_state.thumbnail_data_entries[ind].get("video_title", "Unknown Title")
             with st.container():
                 col1, col2 = st.columns([3, 5])
                 with col1:
-                    st.image(thumbnail_savepath, caption=title, use_column_width=True)
+                    st.image(st.session_state.thumbnail_savepaths[ind], caption=title, use_column_width=True)
                 with col2:
                     try:
-                        with open(thumbnail_savepath, "rb") as file:
+                        with open(st.session_state.thumbnail_savepaths[ind], "rb") as file:
                             st.download_button(
                                 label="📥 Download Thumbnail",
                                 data=file,

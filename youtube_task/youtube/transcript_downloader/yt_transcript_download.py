@@ -1,7 +1,7 @@
 import re
 from typing import List, Dict
 from youtube_transcript_api import YouTubeTranscriptApi
-
+import streamlit as st
 
 def is_valid_youtube_url(url: str) -> bool:
     if not isinstance(url, str):
@@ -14,32 +14,36 @@ def is_valid_youtube_url(url: str) -> bool:
 
 def get_single_transcript(youtube_url: str) -> dict:
     if is_valid_youtube_url(youtube_url):
-        if "shorts" in youtube_url:
-            video_id = youtube_url.split("/")[-1]
-        else:
-            video_id = youtube_url.split("=")[-1]
+        video_id = youtube_url.split("/")[-1] if "shorts" in youtube_url else youtube_url.split("=")[-1]
         try:
-            video_transcript = YouTubeTranscriptApi.get_transcript(video_id)
-            entry = {}
-            entry["youtube_url"] = youtube_url
-            entry["video_id"] = video_id
-            # Placeholder title; replace with proper title retrieval if needed.
-            entry["video_title"] = f"Video {video_id}"
-            entry["transcript"] = video_transcript
-            return entry
+            # Try forcing language 'en'
+            video_transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+            return {
+                "youtube_url": youtube_url,
+                "video_id": video_id,
+                "video_title": f"Video {video_id}",
+                "transcript": video_transcript,
+            }
         except Exception as e:
+            # Log the complete error so we can diagnose
+            st.error(f"Error retrieving transcript for {youtube_url}: {e}")
+            # If the error message contains "Subtitles are disabled", fall back; otherwise, return the error message
             if "Subtitles are disabled for this video" in str(e):
-                entry = {}
-                entry["youtube_url"] = youtube_url
-                entry["video_id"] = video_id
-                entry["video_title"] = f"Video {video_id}"
-                entry["transcript"] = "Subtitles are disabled for this video"
-                return entry
+                return {
+                    "youtube_url": youtube_url,
+                    "video_id": video_id,
+                    "video_title": f"Video {video_id}",
+                    "transcript": "Subtitles are disabled for this video",
+                }
             else:
-                print(e)
+                return {
+                    "youtube_url": youtube_url,
+                    "video_id": video_id,
+                    "video_title": f"Video {video_id}",
+                    "transcript": f"Error: {e}",
+                }
     else:
-        print(f"FAILURE: youtube_url is not valid - {youtube_url}")
-
+        st.error(f"FAILURE: youtube_url is not valid - {youtube_url}")
 
 
 def get_batch_transcripts(youtube_urls: List[str]) -> List[Dict]:

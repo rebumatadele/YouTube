@@ -34,11 +34,11 @@ page = st.sidebar.radio(
 # Main content area
 if page == "About":
     about_page()
+elif page == "Channel Downloader":
+    channel_downloader()
 elif page == "Video Downloader":
     video_downloader()
 elif page == "Transcript Downloader":
     transcript_downloader()
 elif page == "Thumbnail Downloader":
     thumbnail_downloader()
-elif page == "Channel Downloader":
-    channel_downloader()
