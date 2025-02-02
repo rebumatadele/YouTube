@@ -8,7 +8,6 @@ from thumbnail_downloader.config import (
     default_thumbnails_zip_path,
 )
 
-
 def state_init():
     if "thumbnail_raw_urls" not in st.session_state:
         st.session_state.thumbnail_raw_urls = default_thumbnail_raw_urls
@@ -23,12 +22,10 @@ def state_init():
     if "youtube_thumbnails_expander" not in st.session_state:
         st.session_state.youtube_thumbnails_expander = False
 
-
 def reset_state():
     st.session_state.thumbnail_savepaths = default_thumbnail_savepaths
     st.session_state.thumbnail_text_input_urls = default_thumbnail_text_input_urls
     st.session_state.thumbnails_zip_path = default_thumbnails_zip_path
     st.session_state.thumbnail_text_input_urls = ""
-
     st.session_state.thumbnail_fetch_count = 0
     st.session_state.youtube_thumbnails_expander = False

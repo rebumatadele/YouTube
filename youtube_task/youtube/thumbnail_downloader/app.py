@@ -62,9 +62,11 @@ def app():
     # Input Section
     st.markdown("### 🔗 Enter YouTube URLs or Upload File")
     with st.container():
+        # Set a default placeholder URL if no text is present.
+        default_placeholder = "https://www.youtube.com/watch?v=6SpNMNQAVnI"
         text_urls = st.text_area(
             label="YouTube URLs (comma-separated)",
-            value=st.session_state.thumbnail_text_input_urls if "thumbnail_text_input_urls" in st.session_state else "",
+            value=st.session_state.get("thumbnail_text_input_urls", default_placeholder),
             placeholder="https://www.youtube.com/watch?v=xxxx, https://www.youtube.com/shorts/yyyy, ...",
             key="thumbnail_urls_input",
             height=100,
@@ -87,30 +89,36 @@ def app():
     st.markdown("### 📷 Thumbnail Preview")
     if "thumbnail_savepaths" in st.session_state and st.session_state.thumbnail_savepaths:
         for ind, thumbnail_savepath in enumerate(st.session_state.thumbnail_savepaths):
-            title = st.session_state.thumbnail_data_entries[ind]["video_title"]
-            with st.container(border=True):
+            title = st.session_state.thumbnail_data_entries[ind].get("video_title", "Unknown Title")
+            with st.container():
                 col1, col2 = st.columns([3, 5])
                 with col1:
                     st.image(thumbnail_savepath, caption=title, use_column_width=True)
                 with col2:
-                    with open(thumbnail_savepath, "rb") as file:
-                        st.download_button(
-                            label="📥 Download Thumbnail",
-                            data=file,
-                            file_name=title + ".jpg",
-                            mime="image/jpg",
-                            type="primary",
-                        )
+                    try:
+                        with open(thumbnail_savepath, "rb") as file:
+                            st.download_button(
+                                label="📥 Download Thumbnail",
+                                data=file,
+                                file_name=f"{title}.jpg",
+                                mime="image/jpg",
+                                type="primary",
+                            )
+                    except Exception as e:
+                        st.error(f"Error downloading thumbnail: {e}")
 
     # Download Zip Button
     st.markdown("### 📥 Download All Thumbnails")
     if "thumbnails_zip_path" in st.session_state and st.session_state.thumbnail_fetch_count > 0:
-        with open(st.session_state.thumbnails_zip_path, "rb") as file:
-            st.download_button(
-                label="📥 Download All as ZIP",
-                data=file,
-                file_name="thumbnails.zip",
-                mime="application/zip",
-                type="primary",
-                key="button-download",
-            )
+        try:
+            with open(st.session_state.thumbnails_zip_path, "rb") as file:
+                st.download_button(
+                    label="📥 Download All as ZIP",
+                    data=file,
+                    file_name="thumbnails.zip",
+                    mime="application/zip",
+                    type="primary",
+                    key="button-download",
+                )
+        except Exception as e:
+            st.error(f"Error downloading zip: {e}")
