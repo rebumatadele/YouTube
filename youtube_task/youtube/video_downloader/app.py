@@ -1,7 +1,7 @@
 import streamlit as st
 from video_downloader.config import video_choices
 from video_downloader.callbacks import callback_download_video
-from video_downloader.state import state_init
+from video_downloader.state import state_init, default_clip_video_path
 
 def app():
     state_init()
@@ -23,7 +23,7 @@ def app():
         }
 
         /* Primary button */
-        div:has(#button-fetch) + div button {
+        div:has(#youtube_download_fetch_button) + div button {
             background-color: #FF0000 !important;
             color: white !important;
             border-color: #FF0000 !important;
@@ -58,22 +58,22 @@ def app():
     # Input Fields & Selection
     st.markdown("### 🔗 Enter YouTube URL & Select Resolution")
     with st.container():
-        video_download_col_a, video_download_col_b = st.columns([3, 1])
-        with video_download_col_a:
+        col_url, col_res = st.columns([3, 1])
+        with col_url:
             url_input = st.text_input(
                 label="YouTube URL",
-                value="https://www.youtube.com/shorts/F3JJy79I7Tg",
+                value="https://www.youtube.com/watch?v=6SpNMNQAVnI",
                 placeholder="Paste a YouTube URL here...",
                 key="youtube_download_text_input"
             )
-        with video_download_col_b:
+        with col_res:
             resolution_dropdown = st.selectbox(
                 label="Resolution",
                 options=video_choices,
                 index=st.session_state.youtube_download_resolution_index,
             )
 
-    # Fetch Video Button
+    # Fetch & Download Video Button
     st.markdown("### 🎬 Start Download")
     fetch_btn = st.button(
         "🔽 Fetch & Download Video",
@@ -83,15 +83,23 @@ def app():
         args=(url_input, resolution_dropdown),
     )
 
-    # Progress and Status UI
-    if "download_status" in st.session_state:
-        st.markdown("### ⏳ Download Progress")
-        st.progress(st.session_state.download_progress)
-        st.text(st.session_state.download_status)
+    # Single progress display container – shown only while a download is in progress.
+    if "download_status" in st.session_state and st.session_state.download_status:
+        with st.container():
+            st.markdown("### ⏳ Download Progress")
+            st.progress(st.session_state.download_progress)
+            st.write(st.session_state.download_status)
 
-    # Download & Video Preview Section
-    if "youtube_download_location" in st.session_state and st.session_state.youtube_download_location:
+    # Video preview and download button – shown only after a successful download.
+    if (
+        "youtube_download_location" in st.session_state
+        and st.session_state.youtube_download_location
+        and st.session_state.youtube_download_location != default_clip_video_path
+    ):
         st.markdown("### ✅ Download Ready")
+        # First show the video preview...
+        st.video(st.session_state.youtube_download_location, format="video/mp4")
+        # ...and then the download button below the video.
         with open(st.session_state.youtube_download_location, "rb") as file:
             st.download_button(
                 label="📥 Download Video",
@@ -101,5 +109,3 @@ def app():
                 type="primary",
                 key="button-download",
             )
-
-        st.video(st.session_state.youtube_download_location, format="video/mp4")

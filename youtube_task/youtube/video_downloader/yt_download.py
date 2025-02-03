@@ -23,42 +23,48 @@ def download_video(url: str, savedir: str, resolution_dropdown: str, progress_ba
             info_dict = ydl.extract_info(url, download=False)
             video_id = info_dict.get("id", None)
             video_title = info_dict.get("title", None)
-            video_title = re.sub(r"[^a-zA-Z0-9]", " ", video_title)
+            video_title = re.sub(r"[^a-zA-Z0-9]", " ", video_title)  # remove any problematic characters
         
-        # Construct a save path. (Ensure savedir exists.)
+        # Construct a save path (ensure the savedir exists).
         savepath = f"{savedir}/{video_title or video_id}.mp4"
         
-        # Define a progress hook to update the UI.
+        # Define a progress hook that updates a single progress bar and status text.
         def my_progress_hook(d):
             if d.get('status') == 'downloading':
                 total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
+                downloaded_bytes = d.get('downloaded_bytes', 0)
                 if total_bytes:
-                    progress = d.get('downloaded_bytes', 0) / total_bytes
+                    progress = downloaded_bytes / total_bytes
                     progress_bar.progress(progress)
-                    status_text.text(f"Downloading... {d.get('downloaded_bytes', 0)} / {total_bytes} bytes")
+                    percentage = int(progress * 100)
+                    # Convert bytes to KB or MB as needed.
+                    if downloaded_bytes < 1024 * 1024:
+                        downloaded_str = f"{downloaded_bytes/1024:.2f} KB"
+                        total_str = f"{total_bytes/1024:.2f} KB"
+                    else:
+                        downloaded_str = f"{downloaded_bytes/1024/1024:.2f} MB"
+                        total_str = f"{total_bytes/1024/1024:.2f} MB"
+                    status_text.text(f"Downloading... {percentage}% ({downloaded_str} / {total_str})")
             elif d.get('status') == 'finished':
                 progress_bar.progress(1.0)
                 status_text.text("✅ Download completed!")
         
-        # Set yt-dlp options to download a self-contained MP4.
-        # Using "best[ext=mp4]" downloads a single file and does not merge streams.
+        # Set yt-dlp options – using "best[ext=mp4]" downloads a self-contained MP4 file.
         ydl_opts = {
             "format": "best[ext=mp4]",
             "outtmpl": savepath,
             "progress_hooks": [my_progress_hook],
             "noplaylist": True,  # Only download a single video.
-            "postprocessors": [],  # Do not process (merge) streams.
+            "postprocessors": [],  # No extra postprocessing.
         }
         
         # Apply resolution filters if desired.
-        # Note: Filtering by height in a self-contained stream may or may not work depending on available formats.
         if resolution_dropdown == "1080":
             ydl_opts["format"] = "best[height<=1080][ext=mp4]"
         elif resolution_dropdown == "720":
             ydl_opts["format"] = "best[height<=720][ext=mp4]"
         elif resolution_dropdown == "360":
             ydl_opts["format"] = "best[height<=360][ext=mp4]"
-        # Otherwise, "best" is used.
         
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])

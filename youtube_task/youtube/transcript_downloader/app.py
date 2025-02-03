@@ -1,6 +1,8 @@
 import streamlit as st
-from transcript_downloader.callbacks import fetch_transcripts
+from transcript_downloader.callbacks import fetch_transcripts_and_prepare_downloads
 from transcript_downloader.state import state_init
+from io import BytesIO
+import zipfile
 
 def app():
     state_init()
@@ -59,11 +61,11 @@ def app():
     st.markdown('<div class="title-container"><h1>📜 YouTube Transcript Downloader</h1></div>', unsafe_allow_html=True)
     st.write("Fetch and download transcripts from YouTube videos effortlessly.")
 
-    # Input Section
+    # Input Section for URLs
     st.markdown("### 🔗 Enter YouTube URLs or Upload File")
     with st.container():
-        text_urls = st.text_area(
-            label="YouTube URLs (comma-separated)",
+        manual_urls = st.text_area(
+            label="YouTube URLs (comma‑separated)",
             value=st.session_state.transcript_raw_urls,
             placeholder="https://www.youtube.com/watch?v=xxxx, https://www.youtube.com/shorts/yyyy, ...",
             key="transcript_urls_input",
@@ -79,31 +81,47 @@ def app():
         key="button-fetch",
     )
 
-    # Process if button is clicked
     if fetch_btn:
-        _, txt_output = fetch_transcripts(uploaded_file, text_urls)
-        st.session_state.transcript_data_download = txt_output
+        # This function handles sanitation, transcript fetching (with retries, logs, progress updates),
+        # and prepares downloadable content.
+        fetch_transcripts_and_prepare_downloads(uploaded_file, manual_urls)
 
-    # Editable Transcript Preview
-    st.markdown("### ✏️ Edit & Preview Transcripts")
-    if "transcript_data_download" in st.session_state:
-        edited_transcript = st.text_area(
-            label="Edit transcript before downloading",
-            value=st.session_state.transcript_data_download,
-            height=400,
-            key="transcript_edit_area",
-        )
+    # If transcripts have been fetched, allow the user to switch between them:
+    if st.session_state.transcripts_by_video:
+        st.markdown("### ✏️ Edit & Preview Transcript")
+        # Build a dropdown list of video titles as they become available.
+        video_titles = list(st.session_state.transcripts_by_video.keys())
+        selected_video = st.selectbox("Select Video Transcript", video_titles, key="transcript_select")
+        # Show the transcript in an editable text area.
+        transcript_text = st.text_area("Transcript", value=st.session_state.transcripts_by_video[selected_video], height=400, key="transcript_edit_area")
+        # Save any changes back to session state.
+        st.session_state.transcripts_by_video[selected_video] = transcript_text
 
-        # Save edited text
-        st.session_state.transcript_data_download = edited_transcript
-
-        # Download Button
-        st.markdown("### 📥 Download Transcripts")
+        # Provide an individual download button for the selected transcript.
+        st.markdown("### 📥 Download Selected Transcript")
         st.download_button(
-            label="📥 Download Transcripts",
-            data=st.session_state.transcript_data_download,
-            file_name="transcripts.txt",
+            label="Download Transcript",
+            data=st.session_state.transcripts_by_video[selected_video],
+            file_name=f"{selected_video}.txt",
             mime="text/plain",
-            type="primary",
-            key="button-download",
+            key="individual-download"
         )
+
+        # Show ZIP download option only after all URLs have been processed.
+        if st.session_state.get("transcript_all_done", False):
+            st.markdown("### 📥 Download All Transcripts as ZIP")
+            # Build a ZIP file in memory.
+            zip_buffer = BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for title, transcript in st.session_state.transcripts_by_video.items():
+                    safe_title = "".join(c if c.isalnum() or c in " -_" else "_" for c in title).strip()
+                    filename = f"{safe_title}.txt"
+                    zip_file.writestr(filename, transcript)
+            zip_buffer.seek(0)
+            st.download_button(
+                label="Download ZIP",
+                data=zip_buffer,
+                file_name="transcripts.zip",
+                mime="application/zip",
+                key="zip-download"
+            )

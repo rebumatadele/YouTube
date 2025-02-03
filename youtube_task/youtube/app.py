@@ -20,14 +20,14 @@ st.sidebar.markdown("""
 # Sidebar navigation options with icons.
 page = st.sidebar.radio(
     "Navigation",
-    options=["About", "Video Downloader", "Transcript Downloader", "Thumbnail Downloader", "Channel Downloader"],
+    options=["About", "Channel Downloader", "Video Downloader", "Transcript Downloader", "Thumbnail Downloader"],
     index=0,
     format_func=lambda x: {
         "About": "💡 About",
+        "Channel Downloader": "📕 Channel Downloader",
         "Video Downloader": "🎞️ Video Downloader",
         "Transcript Downloader": "📜 Transcript Downloader",
-        "Thumbnail Downloader": "📌 Thumbnail Downloader",
-        "Channel Downloader": "📕 Channel Downloader"
+        "Thumbnail Downloader": "📌 Thumbnail Downloader"
     }[x]
 )
 
