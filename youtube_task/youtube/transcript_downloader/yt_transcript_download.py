@@ -6,6 +6,7 @@ from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, No
 import streamlit as st
 import yt_dlp
 import requests
+import tempfile
 
 def is_valid_youtube_url(url: str) -> bool:
     if not isinstance(url, str):
@@ -35,8 +36,10 @@ def get_subtitles_with_yt_dlp(video_url: str) -> str:
     """
     Attempt to fetch subtitles (captions) using yt-dlp.
     Returns a plain text transcript if available, or an empty string otherwise.
-    This function now supports both VTT and JSON subtitle formats.
+    This version supports attaching cookies (if provided in st.session_state.youtube_cookies)
+    via the 'cookiefile' option.
     """
+    # Base options.
     ydl_opts = {
         'skip_download': True,
         'writesubtitles': True,         # try to get manually provided subtitles
@@ -45,13 +48,27 @@ def get_subtitles_with_yt_dlp(video_url: str) -> str:
         'extract_flat': False,
         'quiet': True,
     }
+    
+    # If cookies are present in session state, attach them.
+    cookies = st.session_state.get("youtube_cookies", "").strip()
+    if cookies:
+        try:
+            cookie_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+            cookie_file.write(cookies.encode("utf-8"))
+            cookie_file.close()
+            ydl_opts["cookiefile"] = cookie_file.name
+            st.write("DEBUG: Attached cookie file for transcript extraction:", cookie_file.name)
+        except Exception as ce:
+            st.warning(f"Failed to attach cookies: {ce}")
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=False)
     except Exception as e:
         st.warning(f"yt-dlp extraction failed for fallback: {e}")
         return ""
-    # Check for subtitles in the info dictionary.
+    
+    # Look for subtitles in the extracted info.
     subtitles = info.get("subtitles", {})
     automatic_captions = info.get("automatic_captions", {})
     subtitle_url = None
@@ -65,22 +82,20 @@ def get_subtitles_with_yt_dlp(video_url: str) -> str:
     elif automatic_captions:
         first_lang = next(iter(automatic_captions))
         subtitle_url = automatic_captions[first_lang][0]['url']
-
+    
     if subtitle_url:
         try:
             r = requests.get(subtitle_url)
             if not r.ok:
                 return ""
             text = r.text
-            # Check if the response is JSON (starts with '{' after stripping)
+            # If the response is JSON, parse it.
             if text.lstrip().startswith('{'):
                 try:
                     data = json.loads(text)
-                    # If the JSON contains an "events" key, process it.
                     if "events" in data:
                         transcript_lines = []
                         for event in data["events"]:
-                            # Each event may have a "segs" list; join the "utf8" parts.
                             segs = event.get("segs", [])
                             line = "".join(seg.get("utf8", "") for seg in segs)
                             if line.strip():
@@ -88,8 +103,8 @@ def get_subtitles_with_yt_dlp(video_url: str) -> str:
                         return "\n".join(transcript_lines)
                 except Exception as je:
                     st.warning(f"Failed to parse JSON subtitles: {je}")
-                    # Fall through to attempt VTT processing.
-            # Otherwise, assume it's VTT and perform minimal processing.
+                    # Fall through to VTT processing.
+            # Otherwise, assume VTT and perform minimal processing.
             lines = text.splitlines()
             transcript_lines = []
             for line in lines:
@@ -104,7 +119,6 @@ def get_subtitles_with_yt_dlp(video_url: str) -> str:
             return ""
     return ""
 
-
 def get_single_transcript(youtube_url: str) -> dict:
     if not is_valid_youtube_url(youtube_url):
         st.error(f"Invalid URL: {youtube_url}")
@@ -114,16 +128,16 @@ def get_single_transcript(youtube_url: str) -> dict:
             "video_title": "Invalid URL",
             "transcript": "Invalid URL format."
         }
-    # Extract video ID
+    # Extract video ID.
     video_id = youtube_url.split("/")[-1] if "shorts" in youtube_url else youtube_url.split("=")[-1]
-    # Get the proper video title using yt-dlp.
+    # Get the video title.
     video_title = get_video_title(video_id)
     
     max_retries = 5
     delay = 1  # initial delay in seconds
     for attempt in range(max_retries):
         try:
-            # Try to force language 'en' (or try alternatives).
+            # Try using the YouTubeTranscriptApi first.
             transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'es', 'auto'])
             return {
                 "youtube_url": youtube_url,
@@ -132,7 +146,7 @@ def get_single_transcript(youtube_url: str) -> dict:
                 "transcript": transcript,
             }
         except (TranscriptsDisabled, NoTranscriptFound) as e:
-            # Fallback to yt-dlp method
+            # Fallback to yt-dlp method, which now attaches cookies if available.
             fallback_transcript = get_subtitles_with_yt_dlp(youtube_url)
             if fallback_transcript:
                 return {
