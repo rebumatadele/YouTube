@@ -109,8 +109,7 @@ if st.sidebar.button("Clear Persistent State Including Files"):
     new_state = clear_persistent_state()
     st.session_state["persistent_state"] = new_state
     st.session_state.youtube_cookies = ""
-    st.rerun()
-
+    st.experimental_rerun()
 # Main content area navigation.
 if page == "About":
     about_page()

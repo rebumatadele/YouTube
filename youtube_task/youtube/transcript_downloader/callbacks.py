@@ -7,6 +7,9 @@ from transcript_downloader.yt_transcript_download import get_single_transcript
 from persistence import load_persistent_state, save_persistent_state
 
 def convert_to_txt(df: pd.DataFrame) -> str:
+    """
+    Utility function (unchanged). Converts a DataFrame to a big text block.
+    """
     txt_content = ""
     for _, row in df.iterrows():
         video_title = row.get("video_title", "Unknown Title")
@@ -20,14 +23,22 @@ def convert_to_txt(df: pd.DataFrame) -> str:
     return txt_content
 
 def fetch_transcripts_and_prepare_downloads(uploaded_file, text_urls):
+    """
+    Modified to:
+      1) Display skip/fetch messages in a single 'alert_placeholder'
+         so that older alerts are replaced by new ones.
+      2) Maintain a single 'partial_display_container' with a dropdown
+         to select *any* already-downloaded transcript for preview.
+    """
+
+    # --- A) Gather the YouTube URLs ---
     youtube_urls = []
-    # Determine channel key: if a file is uploaded, use its name (without extension); otherwise, "individual"
     if uploaded_file is not None:
         channel = os.path.splitext(uploaded_file.name)[0]
     else:
         channel = "individual"
 
-    # --- Sanitize and read URLs ---
+    # If a file is uploaded
     if uploaded_file is not None:
         if text_urls and text_urls.strip():
             st.warning("Please provide URLs either manually or via file upload, not both.", icon="⚠️")
@@ -36,6 +47,8 @@ def fetch_transcripts_and_prepare_downloads(uploaded_file, text_urls):
             content = uploaded_file.read().decode("utf-8")
             file_urls = [u.strip() for u in content.split(",") if u.strip()]
             youtube_urls.extend(file_urls)
+
+    # If manual text is provided
     if text_urls and text_urls.strip():
         if uploaded_file is not None:
             st.warning("Please provide URLs either manually or via file upload, not both.", icon="⚠️")
@@ -46,57 +59,101 @@ def fetch_transcripts_and_prepare_downloads(uploaded_file, text_urls):
         except Exception:
             st.warning("Error processing the provided URLs.", icon="⚠️")
             st.stop()
+
     if not youtube_urls:
         st.error("No valid YouTube URLs were provided.")
         st.stop()
 
-    num_urls = len(youtube_urls)
-    progress_bar = st.progress(0)
-    status_placeholder = st.empty()
-    
-    # We'll update the status text with a summary of processed videos.
-    processed_titles = []
-    transcripts_by_video = {}
-    batch_transcripts = []
-    for i, url in enumerate(youtube_urls):
-        # Update status with current URL and summary of processed titles.
-        status_placeholder.text(f"Processing URL {i+1}/{num_urls}: {url}\nProcessed: {', '.join(processed_titles)}")
-        transcript_entry = get_single_transcript(url)
-        batch_transcripts.append(transcript_entry)
-        video_title = transcript_entry.get("video_title", "Unknown Title")
-        transcript_data = transcript_entry.get("transcript", "")
-        if isinstance(transcript_data, list):
-            transcript_text = " ".join([seg.get("text", "") for seg in transcript_data])
-        else:
-            transcript_text = str(transcript_data)
-        transcripts_by_video[video_title] = transcript_text
-        processed_titles.append(video_title)
-        progress_bar.progress((i + 1) / num_urls)
-        time.sleep(0.1)
-    
-    status_placeholder.text("All transcripts processed!")
-    st.session_state.transcript_all_done = True
-
-    df = pd.DataFrame(batch_transcripts)
-    def truncate_and_append(text, length=100, suffix="..."):
-        return text[:length] + suffix if len(text) > length else text
-    df_table = copy.deepcopy(df).astype(str)
-    if "transcript" in df_table.columns:
-        df_table["transcript"] = df_table["transcript"].apply(lambda x: truncate_and_append(x))
-    st.session_state.transcript_data_table = df_table
-
-    # Update persistent state: group transcripts under the chosen channel.
+    # --- B) Load / init persistent storage
     persistent_state = st.session_state.get("persistent_state", load_persistent_state())
     if "transcripts" not in persistent_state:
         persistent_state["transcripts"] = {}
-    # Merge with any existing transcripts under this channel.
-    existing = persistent_state["transcripts"].get(channel, {})
-    existing.update(transcripts_by_video)
-    persistent_state["transcripts"][channel] = existing
-    save_persistent_state(persistent_state)
-    st.session_state.persistent_state = persistent_state
 
-    # Also update the session state (grouped by channel).
-    if "transcripts_by_video" not in st.session_state or not st.session_state.transcripts_by_video:
-        st.session_state.transcripts_by_video = {}
-    st.session_state.transcripts_by_video[channel] = existing
+    if "downloaded_links" not in persistent_state:
+        persistent_state["downloaded_links"] = []
+    downloaded_urls_set = set(persistent_state["downloaded_links"])
+
+    channel_dict = persistent_state["transcripts"].get(channel, {})
+
+    # For building final summary
+    batch_transcripts = []
+
+    # Show a progress bar
+    num_urls = len(youtube_urls)
+    progress_bar = st.progress(0)
+
+    # (1) Single placeholder for ephemeral alerts (info/skipping/fetched).
+    alert_placeholder = st.empty()
+
+    st.write(f"**Starting to fetch transcripts for {num_urls} URL(s) in channel '{channel}'.**")
+
+    # --- C) Main loop with partial updates
+    for i, url in enumerate(youtube_urls):
+        # Overwrite the alert each iteration
+        alert_placeholder.info(f"Processing {i+1}/{num_urls}: {url}")
+
+        # 1) If this URL is already in downloaded_links, skip
+        if url in downloaded_urls_set:
+            alert_placeholder.warning(f"Skipping URL (already downloaded): {url}")
+            progress_bar.progress((i + 1) / num_urls)
+            time.sleep(1)
+            continue
+
+        # Otherwise, fetch the transcript
+        transcript_entry = get_single_transcript(url)
+        batch_transcripts.append(transcript_entry)
+
+        video_id = transcript_entry.get("video_id")
+        video_title = transcript_entry.get("video_title", "Unknown Title")
+        raw_data = transcript_entry.get("transcript", "")
+
+        # If video_id is in channel_dict, skip
+        if video_id and video_id in channel_dict:
+            alert_placeholder.info(f"Skipping '{video_title}' (already fetched by video_id).")
+        else:
+            # Convert list to text
+            if isinstance(raw_data, list):
+                transcript_text = " ".join(seg.get("text", "") for seg in raw_data)
+            else:
+                transcript_text = str(raw_data)
+
+            alert_placeholder.success(f"Fetched transcript for '{video_title}'. Saving...")
+
+            if video_id:
+                channel_dict[video_id] = {
+                    "title": video_title,
+                    "transcript": transcript_text
+                }
+                persistent_state["transcripts"][channel] = channel_dict
+
+        # Add URL to downloaded set
+        downloaded_urls_set.add(url)
+        persistent_state["downloaded_links"] = list(downloaded_urls_set)
+
+        # Save partial
+        save_persistent_state(persistent_state)
+        st.session_state["persistent_state"] = persistent_state
+
+        # Reflect updated transcripts
+        st.session_state["transcripts_by_video"] = persistent_state["transcripts"]
+
+        # Update progress bar
+        progress_bar.progress((i + 1) / num_urls)
+        time.sleep(1)
+
+    alert_placeholder.success("All transcripts processed!")
+    st.session_state["transcript_all_done"] = True
+
+    # Build a truncated DataFrame for final summary
+    df = pd.DataFrame(batch_transcripts)
+    def truncate_and_append(txt, length=100, suffix="..."):
+        return txt[:length] + suffix if (isinstance(txt, str) and len(txt) > length) else txt
+
+    df_table = copy.deepcopy(df).astype(str)
+    if "transcript" in df_table.columns:
+        df_table["transcript"] = df_table["transcript"].apply(lambda x: truncate_and_append(x))
+    st.session_state["transcript_data_table"] = df_table
+
+    st.session_state.transcripts_by_video = persistent_state["transcripts"]
+    # final "Done" message
+    st.success("Done fetching all transcripts!")

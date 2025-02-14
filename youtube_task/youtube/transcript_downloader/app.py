@@ -7,90 +7,82 @@ import zipfile
 
 def app():
     state_init()
-    
-    # Load persistent state.
+
+    # Load persistent state from disk
     persistent_state = load_persistent_state()
     st.session_state["persistent_state"] = persistent_state
+
     if persistent_state.get("transcripts"):
         st.session_state.transcripts_by_video = persistent_state["transcripts"]
     else:
         st.session_state.transcripts_by_video = {}
-    
-    # Button to clear persistent state.
+
+    # Button to clear persistent state
     if st.button("Clear Persistent State"):
         new_state = clear_persistent_state()
         st.session_state["persistent_state"] = new_state
         st.session_state.transcripts_by_video = {}
         st.experimental_rerun()
-    
-    st.markdown('<div class="title-container"><h1>📜 YouTube Transcript Downloader</h1></div>', unsafe_allow_html=True)
-    st.write("Fetch and download transcripts from YouTube videos effortlessly.")
-    
-    st.markdown("### 🔗 Enter YouTube URLs or Upload File")
-    with st.container():
-        manual_urls = st.text_area(
-            label="YouTube URLs (comma‑separated)",
-            value=st.session_state.get("transcript_raw_urls", ""),
-            placeholder="https://www.youtube.com/watch?v=xxxx, https://www.youtube.com/shorts/yyyy, ...",
-            key="transcript_urls_input",
-            height=100,
-        )
-        uploaded_file = st.file_uploader("📂 Upload a TXT file with YouTube URLs", type=["txt"], key="transcripts_file_uploader")
-    
-    st.markdown("### 📜 Fetch Transcripts")
-    fetch_btn = st.button("🔍 Fetch Transcripts", type="primary", key="button-fetch")
-    if fetch_btn:
+
+    st.markdown("<h1>📜 YouTube Transcript Downloader</h1>", unsafe_allow_html=True)
+
+    # 1) Collect file or manual URLs
+    manual_urls = st.text_area("Enter YouTube URLs (comma‑separated)", "", height=100)
+    uploaded_file = st.file_uploader("Upload .txt with YouTube URLs", type=["txt"])
+
+    # 2) Button to fetch them all (with partial updates)
+    if st.button("Fetch Transcripts"):
         fetch_transcripts_and_prepare_downloads(uploaded_file, manual_urls)
-        persistent_state = load_persistent_state()
-        st.session_state["persistent_state"] = persistent_state
-        st.session_state.transcripts_by_video = persistent_state.get("transcripts", {})
-    
-    # If transcripts exist, show the grouped preview.
+        # Re-load persistent state to get final updates
+        # persistent_state = load_persistent_state()
+        # st.session_state["persistent_state"] = persistent_state
+        # st.session_state["transcripts_by_video"] = persistent_state.get("transcripts", {})
+
+    # 3) Single *final* dropdown for channels
     if st.session_state.transcripts_by_video:
-        st.markdown("### ✏️ Edit & Preview Transcript")
+        st.markdown("## View/Edit Downloaded Transcripts")
         channels = list(st.session_state.transcripts_by_video.keys())
         selected_channel = st.selectbox("Select Channel", channels, key="channel_select")
-        videos_dict = st.session_state.transcripts_by_video.get(selected_channel, {})
-        if videos_dict:
-            video_titles = list(videos_dict.keys())
-            selected_video = st.selectbox("Select Video Transcript", video_titles, key="transcript_select")
-            transcript_text = st.text_area(
-                "Transcript", 
-                value=videos_dict[selected_video], 
-                height=400, 
-                key="transcript_edit_area"
-            )
-            videos_dict[selected_video] = transcript_text
-            st.session_state.transcripts_by_video[selected_channel] = videos_dict
-            
-            st.markdown("### 📥 Download Selected Transcript")
-            st.download_button(
-                label="Download Transcript",
-                data=videos_dict[selected_video],
-                file_name=f"{selected_video}.txt",
-                mime="text/plain",
-                key="individual-download"
-            )
-        else:
-            st.write("No transcripts found for this channel.")
-        
-        if st.session_state.get("transcript_all_done", False):
-            st.markdown("### 📥 Download All Transcripts as ZIP")
-            zip_buffer = BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                for channel, videos in st.session_state.transcripts_by_video.items():
-                    for title, transcript in videos.items():
-                        safe_title = "".join(c if c.isalnum() or c in " -_" else "_" for c in title).strip()
-                        filename = f"{channel}/{safe_title}.txt"
-                        zip_file.writestr(filename, transcript)
-            zip_buffer.seek(0)
-            st.download_button(
-                label="Download ZIP",
-                data=zip_buffer,
-                file_name="transcripts.zip",
-                mime="application/zip",
-                key="zip-download"
-            )
 
-if __name__ == "__main__":
-    app()
+        videos_dict = st.session_state.transcripts_by_video[selected_channel]
+        video_ids = list(videos_dict.keys())
+        labels = [videos_dict[vid_id]["title"] for vid_id in video_ids]
+
+        selected_label = st.selectbox("Select Video Transcript", labels, key="video_select")
+        chosen_index = labels.index(selected_label)
+        chosen_vid_id = video_ids[chosen_index]
+
+        # Show the transcript
+        transcript_text = videos_dict[chosen_vid_id]["transcript"]
+        new_text = st.text_area("Transcript", transcript_text, height=300, key="transcript_text_area")
+
+        # If user edits, update
+        videos_dict[chosen_vid_id]["transcript"] = new_text
+        st.session_state.transcripts_by_video[selected_channel] = videos_dict
+
+        # Download single
+        st.download_button(
+            "Download This Transcript",
+            data=new_text,
+            file_name=f"{selected_label}.txt",
+            mime="text/plain"
+        )
+
+        # Download all as ZIP
+        st.markdown("### Download All Transcripts as ZIP")
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for ch_name, channel_data in st.session_state.transcripts_by_video.items():
+                for vid_id, vid_info in channel_data.items():
+                    vid_title = vid_info["title"]
+                    text_data = vid_info["transcript"]
+                    safe_title = "".join(c if c.isalnum() else "_" for c in vid_title).strip()
+                    file_path = f"{ch_name}/{safe_title}.txt"
+                    zip_file.writestr(file_path, text_data)
+        zip_buffer.seek(0)
+        st.download_button(
+            "Download ZIP",
+            data=zip_buffer,
+            file_name="transcripts.zip",
+            mime="application/zip"
+        )

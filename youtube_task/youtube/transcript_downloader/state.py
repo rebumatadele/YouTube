@@ -8,10 +8,13 @@ def state_init():
         st.session_state.transcript_data_table = pd.DataFrame(columns=["youtube_url", "video_id", "transcript"])
     if "transcript_data_download" not in st.session_state:
         st.session_state.transcript_data_download = ""
-    # We will store transcripts grouped by channel here.
     if "transcripts_by_video" not in st.session_state:
         st.session_state.transcripts_by_video = {}
     if "transcript_log" not in st.session_state:
         st.session_state.transcript_log = ""
     if "transcript_all_done" not in st.session_state:
         st.session_state.transcript_all_done = False
+
+    # We'll also store a list of queued URLs here:
+    if "urls_queue" not in st.session_state:
+        st.session_state["urls_queue"] = []
